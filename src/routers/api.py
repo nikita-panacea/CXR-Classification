@@ -290,20 +290,28 @@ async def segment_dicom(file: UploadFile = File(...)):
     """
     Upload a DICOM file, convert it to an image, and perform prediction.
     """
-
-    # Convert DICOM to image
+    temp_dir = tempfile.mkdtemp(dir=DICOM_TEMP_PATH)
     try:
-        dicom_conversion_response = await convert_dicom(file, format=format)
-        
-        if "converted_image_path" not in dicom_conversion_response:
-            raise HTTPException(status_code=500, detail="DICOM conversion failed")
-        
-        converted_image_path = dicom_conversion_response["converted_image_path"]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during DICOM conversion: {str(e)}")
+        temp_file = os.path.join(temp_dir, file.filename)
+        with open(temp_file, "wb") as out_file:
+            out_file.write(await file.read())
 
-    # Load and preprocess the image
-    try:
+        with ZipFile(temp_file, 'r') as zip_ref:
+            root_dir = zip_ref.namelist()[0].split('/')[0]  # Find the root dir in the zip
+            zip_ref.extractall(temp_dir)
+
+        root_dir_path = os.path.join(temp_dir, root_dir)
+
+        file_paths = glob.glob(root_dir_path + '/**/*.dcm', recursive=True)
+        DicomPath = file_paths[0]
+        output_path = DicomPath.replace(".dcm", ".png")
+        dicom_to_image(DicomPath , output_path , format="png")
+        converted_image_path = output_path
+
+
+
+
+        
         image = Image.open(converted_image_path)
         if image.mode == "I;16":
             image = image.convert("I")  # Convert to 32-bit integer mode
