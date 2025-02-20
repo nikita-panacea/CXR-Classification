@@ -23,6 +23,8 @@ import torchvision.transforms as transforms
 from ..model.prediction import predict_single_image
 from ..configuration.config import weights
 from src.utils import CommonUtils
+from zipfile import ZipFile
+import glob
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../MedViT')))
 
 from MedViT import MedViT_large as large
