@@ -280,6 +280,92 @@ async def segment_dicom(file: UploadFile = File(...), format: str = "png"):
         return JSONResponse(content={"file_id": os.path.basename(temp_dir_return)})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving predictions: {str(e)}")
+
+
+
+
+
+@router.post("/predictdiseasev2/")
+async def segment_dicom(file: UploadFile = File(...)):
+    """
+    Upload a DICOM file, convert it to an image, and perform prediction.
+    """
+
+    # Convert DICOM to image
+    try:
+        dicom_conversion_response = await convert_dicom(file, format=format)
+        
+        if "converted_image_path" not in dicom_conversion_response:
+            raise HTTPException(status_code=500, detail="DICOM conversion failed")
+        
+        converted_image_path = dicom_conversion_response["converted_image_path"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during DICOM conversion: {str(e)}")
+
+    # Load and preprocess the image
+    try:
+        image = Image.open(converted_image_path)
+        if image.mode == "I;16":
+            image = image.convert("I")  # Convert to 32-bit integer mode
+            image = image.point(lambda p: p * (255.0 / 65535.0))  # Normalize pixel values
+            image = image.convert("L")
+
+        print(f"Image mode: {image.mode}")
+        image = transform(image).unsqueeze(0)
+        print(f"Size of image: {image.size()}")
+        
+        image = image.to(device)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+
+    # Perform prediction
+    try:
+        predictions = predict_single_image(
+            image_path=converted_image_path,
+            model=model,
+            transform=transform,
+            labels=LABELS,
+            device=device
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during prediction: {str(e)}")
+
+    # Clean up the converted image file
+    if os.path.exists(converted_image_path):
+        os.remove(converted_image_path)
+
+    # Convert NumPy data to JSON serializable format
+    def convert_numpy(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.generic):
+            return obj.item()
+        return obj
+
+    try:
+        json_filename = "predictions.json"
+        json_filepath = os.path.join(outputDir, json_filename)
+        
+        with open(json_filepath, "w", encoding="utf-8") as json_file:
+            json.dump(predictions, json_file, indent=4, default=convert_numpy)
+
+        # Move the JSON file to a temporary directory
+        temp_dir_return = tempfile.mkdtemp(dir=DICOM_TEMP_PATH)
+        shutil.move(json_filepath, temp_dir_return)
+
+        return JSONResponse(content={"file_id": os.path.basename(temp_dir_return)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving predictions: {str(e)}")
+    
+
+
+
+
+
+
+
+
+
     
 
 
